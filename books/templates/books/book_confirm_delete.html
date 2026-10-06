@@ -1,0 +1,24 @@
+{% extends "books/base.html" %}
+
+{% block title %}Delete Book · Book Tracker{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <div class="card border-danger">
+      <div class="card-body">
+        <h1 class="h4 card-title">Delete book?</h1>
+        <p>
+          Are you sure you want to delete <strong>{{ book.title }}</strong> by {{ book.author }}?
+          This cannot be undone.
+        </p>
+        <form method="post">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-danger">Yes, delete</button>
+          <a href="{% url 'book_list' %}" class="btn btn-secondary">Cancel</a>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

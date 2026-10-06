@@ -1,0 +1,40 @@
+{% extends "books/base.html" %}
+
+{% block content %}
+<div class="mb-4">
+  <h1 class="h2">Book Tracker</h1>
+  <p class="text-muted">Keep track of the books you want to read, are reading, and have finished.</p>
+</div>
+
+{% if stats %}
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card stat-card border-primary">
+      <div class="card-body">
+        <div class="text-muted">Total books</div>
+        <div class="display-6">{{ stats.total }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card stat-card border-success">
+      <div class="card-body">
+        <div class="text-muted">Completed</div>
+        <div class="display-6 text-success">{{ stats.completed }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card stat-card border-warning">
+      <div class="card-body">
+        <div class="text-muted">Currently reading</div>
+        <div class="display-6 text-warning">{{ stats.reading }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<a href="{% url 'book_list' %}" class="btn btn-primary">View books</a>
+<a href="{% url 'book_create' %}" class="btn btn-outline-primary">Add a book</a>
+{% endblock %}

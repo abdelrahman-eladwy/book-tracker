@@ -1,0 +1,57 @@
+{% extends "books/base.html" %}
+
+{% block title %}Books · Book Tracker{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Books</h1>
+  <a href="{% url 'book_create' %}" class="btn btn-primary">+ Add Book</a>
+</div>
+
+{% if books %}
+<div class="table-responsive">
+  <table class="table table-striped align-middle">
+    <thead class="table-light">
+      <tr>
+        <th>Title</th>
+        <th>Author</th>
+        <th>Category</th>
+        <th>Status</th>
+        <th>Added</th>
+        <th class="text-end">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for book in books %}
+      <tr>
+        <td class="fw-semibold">{{ book.title }}</td>
+        <td>{{ book.author }}</td>
+        <td>{{ book.category }}</td>
+        <td>
+          <form method="post" action="{% url 'book_status' book.id %}" class="status-form">
+            {% csrf_token %}
+            <select name="status" class="form-select form-select-sm" onchange="this.form.submit()" aria-label="Status for {{ book.title }}">
+              {% for status in statuses %}
+                <option value="{{ status }}" {% if status == book.status %}selected{% endif %}>{{ status }}</option>
+              {% endfor %}
+            </select>
+            <noscript><button type="submit" class="btn btn-sm btn-outline-secondary mt-1">Save</button></noscript>
+          </form>
+        </td>
+        <td class="text-nowrap">{{ book.created_date|date:"Y-m-d" }}</td>
+        <td class="text-end text-nowrap">
+          <a href="{% url 'book_edit' book.id %}" class="btn btn-sm btn-outline-secondary">Edit</a>
+          <a href="{% url 'book_delete' book.id %}" class="btn btn-sm btn-outline-danger">Delete</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="alert alert-info">
+  No books yet. <a href="{% url 'book_create' %}">Add your first book</a>
+  or run <code>python manage.py seed_books</code> to load sample data.
+</div>
+{% endif %}
+{% endblock %}
