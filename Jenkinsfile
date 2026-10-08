@@ -9,6 +9,8 @@
 //   book-tracker-mongo-root-password   MongoDB root password
 //   book-tracker-mongo-app-password    password of the app's MongoDB user
 //   book-tracker-django-secret-key     Django SECRET_KEY
+//   dockerhub-credentials              Kind "Username with password": Docker Hub
+//                                      username + access token (not the account password)
 // The two MongoDB passwords may only contain letters, digits and . _ -
 // (they are placed inside a connection URI).
 
@@ -260,6 +262,32 @@ pipeline {
                     # Django -> MongoDB (authenticated connection as the app user)
                     docker exec "$APP_NAME" python manage.py check_mongo
                 '''
+            }
+        }
+
+        // Publish the image only after it has been deployed and passed the smoke test.
+        stage('Push to Docker Hub') {
+            when { expression { isMain() } }
+            steps {
+                withCredentials([
+                    usernamePassword(credentialsId: 'dockerhub-credentials',
+                                     usernameVariable: 'DOCKERHUB_USER',
+                                     passwordVariable: 'DOCKERHUB_TOKEN')
+                ]) {
+                    sh '''
+                        # Use a throwaway Docker config so the login is not left on the node.
+                        export DOCKER_CONFIG="$(mktemp -d)"
+                        trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+
+                        REPO="$DOCKERHUB_USER/$IMAGE_NAME"
+                        printf '%s' "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin
+
+                        docker tag "$IMAGE_NAME:$IMAGE_TAG" "$REPO:$IMAGE_TAG"
+                        docker tag "$IMAGE_NAME:$IMAGE_TAG" "$REPO:latest"
+                        docker push "$REPO:$IMAGE_TAG"
+                        docker push "$REPO:latest"
+                    '''
+                }
             }
         }
     }
