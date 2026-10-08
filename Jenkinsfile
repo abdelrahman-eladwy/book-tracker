@@ -35,8 +35,20 @@ def ensureImage() {
     '''
 }
 
+// Defaults for the build parameters below. On a job's first build Jenkins has
+// not read this file's parameters yet and they are empty, so the deploy falls
+// back to these (DEPLOY_PORT/DEPLOY_HOST in environment).
+def DEFAULT_APP_PORT = '8081'
+def DEFAULT_APP_HOST = '192.168.100.248'
+
 pipeline {
     agent any
+
+    // Build on every push. Jenkins is on a private network, so GitHub cannot
+    // reach it with a webhook; it checks the repo for new commits every ~2 minutes.
+    triggers {
+        pollSCM('H/2 * * * *')
+    }
 
     options {
         timestamps()
@@ -46,11 +58,13 @@ pipeline {
     }
 
     parameters {
-        string(name: 'APP_PORT', defaultValue: '8081', description: 'Host port Nginx is published on')
-        string(name: 'APP_HOST', defaultValue: '192.168.100.248', description: 'Hostname/IP users open in the browser (added to ALLOWED_HOSTS and CSRF trusted origins)')
+        string(name: 'APP_PORT', defaultValue: DEFAULT_APP_PORT, description: 'Host port Nginx is published on')
+        string(name: 'APP_HOST', defaultValue: DEFAULT_APP_HOST, description: 'Hostname/IP users open in the browser (added to ALLOWED_HOSTS and CSRF trusted origins)')
     }
 
     environment {
+        DEPLOY_PORT = "${params.APP_PORT ?: DEFAULT_APP_PORT}"
+        DEPLOY_HOST = "${params.APP_HOST ?: DEFAULT_APP_HOST}"
         IMAGE_NAME = 'book-tracker'
         IMAGE_TAG  = "build-${env.BUILD_NUMBER}"
         PY_IMAGE   = 'python:3.12-slim'
@@ -263,8 +277,8 @@ pipeline {
                     ensureImage()
                     sh '''
                         export MONGODB_URI="mongodb://booktracker:${MONGO_APP_PASSWORD}@${MONGO_NAME}:27017/${MONGODB_DATABASE}?authSource=${MONGODB_DATABASE}"
-                        export DJANGO_ALLOWED_HOSTS="localhost,127.0.0.1,${APP_HOST}"
-                        export DJANGO_CSRF_TRUSTED_ORIGINS="http://localhost:${APP_PORT},http://127.0.0.1:${APP_PORT},http://${APP_HOST}:${APP_PORT}"
+                        export DJANGO_ALLOWED_HOSTS="localhost,127.0.0.1,${DEPLOY_HOST}"
+                        export DJANGO_CSRF_TRUSTED_ORIGINS="http://localhost:${DEPLOY_PORT},http://127.0.0.1:${DEPLOY_PORT},http://${DEPLOY_HOST}:${DEPLOY_PORT}"
 
                         docker rm -f "$NGINX_NAME" "$APP_NAME" >/dev/null 2>&1 || true
                         docker volume create "$STATIC_VOL" >/dev/null
@@ -294,7 +308,7 @@ pipeline {
                             --network "$NETWORK" \
                             --restart unless-stopped \
                             --log-driver journald --log-opt tag=nginx \
-                            -p "$APP_PORT":80 \
+                            -p "$DEPLOY_PORT":80 \
                             -v "$STATIC_VOL":/opt/book_tracker/staticfiles:ro \
                             nginx:stable >/dev/null
                         docker cp deploy/nginx/docker.conf "$NGINX_NAME":/etc/nginx/conf.d/default.conf
@@ -310,7 +324,7 @@ pipeline {
                 sh '''
                     ok=0
                     for i in $(seq 1 20); do
-                        code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${APP_PORT}/" || true)
+                        code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${DEPLOY_PORT}/" || true)
                         echo "GET / -> HTTP $code"
                         [ "$code" = "200" ] && { ok=1; break; }
                         sleep 3
