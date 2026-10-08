@@ -97,6 +97,33 @@ pipeline {
                     }
                 }
 
+                // Secrets: Yelp detect-secrets over every file, compared with the
+                // reviewed .secrets.baseline (placeholders such as "username:password").
+                // To accept a reviewed finding, regenerate the baseline:
+                //   detect-secrets scan --all-files --exclude-files '(^|/)\.git/|^\.secrets\.baseline$' > .secrets.baseline
+                stage('Secrets (detect-secrets)') {
+                    steps {
+                        catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                            sh '''
+                                docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
+                                    -v "$WORKSPACE":/src -w /src "$PY_IMAGE" sh -c '
+                                        python -m venv /tmp/venv &&
+                                        /tmp/venv/bin/pip install --no-cache-dir -q detect-secrets &&
+                                        /tmp/venv/bin/detect-secrets scan --all-files \
+                                            --exclude-files "(^|/)\\.git/|^\\.secrets\\.baseline$" \
+                                            > detect-secrets-scan.json &&
+                                        /tmp/venv/bin/python ci/check_secrets.py \
+                                            detect-secrets-scan.json .secrets.baseline \
+                                            > detect-secrets-report.txt 2>&1
+                                        rc=$?
+                                        cat detect-secrets-report.txt
+                                        exit $rc
+                                    '
+                            '''
+                        }
+                    }
+                }
+
                 // SAST: Bandit, the Python security linter (medium+ severity).
                 stage('SAST (Bandit)') {
                     steps {
