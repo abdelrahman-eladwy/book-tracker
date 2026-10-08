@@ -47,7 +47,7 @@ pipeline {
 
     parameters {
         string(name: 'APP_PORT', defaultValue: '8081', description: 'Host port Nginx is published on')
-        string(name: 'APP_HOST', defaultValue: 'localhost', description: 'Hostname/IP users open in the browser (added to ALLOWED_HOSTS and CSRF trusted origins)')
+        string(name: 'APP_HOST', defaultValue: '192.168.100.248', description: 'Hostname/IP users open in the browser (added to ALLOWED_HOSTS and CSRF trusted origins)')
     }
 
     environment {
