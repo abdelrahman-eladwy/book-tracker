@@ -20,6 +20,21 @@ def isMain() {
     return branch == 'main' || branch == 'origin/main'
 }
 
+// "Restart from Stage" skips the image build, so $IMAGE_TAG (build-<this build>)
+// does not exist yet. Reuse the image built earlier from the same commit.
+def ensureImage() {
+    sh '''
+        docker image inspect "$IMAGE_NAME:$IMAGE_TAG" >/dev/null 2>&1 && exit 0
+        id=$(docker images -q --filter "label=org.opencontainers.image.revision=$GIT_COMMIT" "$IMAGE_NAME" | head -n 1)
+        if [ -z "$id" ]; then
+            echo "No $IMAGE_NAME image built from commit $GIT_COMMIT; run a full build (Build Now)."
+            exit 1
+        fi
+        echo "Reusing image $id (built from $GIT_COMMIT) as $IMAGE_NAME:$IMAGE_TAG"
+        docker tag "$id" "$IMAGE_NAME:$IMAGE_TAG"
+    '''
+}
+
 pipeline {
     agent any
 
@@ -99,6 +114,7 @@ pipeline {
 
                 // Secrets: Yelp detect-secrets over every file, compared with the
                 // reviewed .secrets.baseline (placeholders such as "username:password").
+                // The scan/report files CI writes into the workspace are excluded.
                 // To accept a reviewed finding, regenerate the baseline:
                 //   detect-secrets scan --all-files --exclude-files '(^|/)\.git/|^\.secrets\.baseline$' > .secrets.baseline
                 stage('Secrets (detect-secrets)') {
@@ -110,7 +126,7 @@ pipeline {
                                         python -m venv /tmp/venv &&
                                         /tmp/venv/bin/pip install --no-cache-dir -q detect-secrets &&
                                         /tmp/venv/bin/detect-secrets scan --all-files \
-                                            --exclude-files "(^|/)\\.git/|^\\.secrets\\.baseline$" \
+                                            --exclude-files "(^|/)\\.git/|^\\.secrets\\.baseline$|^detect-secrets-scan\\.json$|-report\\.txt$" \
                                             > detect-secrets-scan.json &&
                                         /tmp/venv/bin/python ci/check_secrets.py \
                                             detect-secrets-scan.json .secrets.baseline \
@@ -156,7 +172,7 @@ pipeline {
         stage('Build Docker image') {
             when { expression { isMain() } }
             steps {
-                sh 'docker build -t "$IMAGE_NAME:$IMAGE_TAG" -t "$IMAGE_NAME:latest" .'
+                sh 'docker build --label "org.opencontainers.image.revision=$GIT_COMMIT" -t "$IMAGE_NAME:$IMAGE_TAG" -t "$IMAGE_NAME:latest" .'
             }
         }
 
@@ -234,6 +250,7 @@ pipeline {
                     string(credentialsId: 'book-tracker-mongo-app-password', variable: 'MONGO_APP_PASSWORD'),
                     string(credentialsId: 'book-tracker-django-secret-key', variable: 'DJANGO_SECRET_KEY')
                 ]) {
+                    ensureImage()
                     sh '''
                         export MONGODB_URI="mongodb://booktracker:${MONGO_APP_PASSWORD}@${MONGO_NAME}:27017/${MONGODB_DATABASE}?authSource=${MONGODB_DATABASE}"
                         export DJANGO_ALLOWED_HOSTS="localhost,127.0.0.1,${APP_HOST}"
@@ -301,6 +318,7 @@ pipeline {
                                      usernameVariable: 'DOCKERHUB_USER',
                                      passwordVariable: 'DOCKERHUB_TOKEN')
                 ]) {
+                    ensureImage()
                     sh '''
                         # Use a throwaway Docker config so the login is not left on the node.
                         export DOCKER_CONFIG="$(mktemp -d)"
