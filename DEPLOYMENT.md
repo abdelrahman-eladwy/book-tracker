@@ -223,3 +223,9 @@ To keep MongoDB completely internal (recommended on a public server), delete the
 - Set `DJANGO_ALLOWED_HOSTS` / `DJANGO_CSRF_TRUSTED_ORIGINS` to your domain.
 - Remove the `ports:` of the `mongo` service.
 - Put HTTPS in front (e.g. change Nginx to listen on 443 with certificates from Let's Encrypt), then set `SECURE_SSL_REDIRECT`, `CSRF_COOKIE_SECURE` and `SECURE_HSTS_SECONDS` in Django settings.
+
+## Security monitoring (Wazuh)
+
+The Jenkins deployment can be monitored with Wazuh (web attacks, CSRF and Host
+header warnings, MongoDB brute force, Docker events). See
+[deploy/wazuh/README.md](deploy/wazuh/README.md).

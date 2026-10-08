@@ -208,6 +208,15 @@ pipeline {
                         docker network inspect "$NETWORK" >/dev/null 2>&1 || docker network create "$NETWORK"
                         docker volume create "$MONGO_VOL" >/dev/null
 
+                        # Containers log to journald, tagged so the Wazuh agent on this
+                        # node can decode them (deploy/wazuh/). A MongoDB container from
+                        # before that still logs to json-file: recreate it (the data
+                        # lives in the volume, so nothing is lost).
+                        if docker inspect "$MONGO_NAME" >/dev/null 2>&1 &&
+                           [ "$(docker inspect -f '{{.HostConfig.LogConfig.Type}}' "$MONGO_NAME")" != journald ]; then
+                            docker rm -f "$MONGO_NAME" >/dev/null
+                        fi
+
                         # The init script creates the least-privilege app user the
                         # first time the (empty) data volume is initialised.
                         if docker inspect "$MONGO_NAME" >/dev/null 2>&1; then
@@ -216,6 +225,7 @@ pipeline {
                             docker create --name "$MONGO_NAME" \
                                 --network "$NETWORK" \
                                 --restart unless-stopped \
+                                --log-driver journald --log-opt tag=mongod \
                                 -e MONGO_INITDB_ROOT_USERNAME=bookadmin \
                                 -e MONGO_INITDB_ROOT_PASSWORD \
                                 -e MONGO_INITDB_DATABASE="$MONGODB_DATABASE" \
@@ -260,11 +270,14 @@ pipeline {
                         docker volume create "$STATIC_VOL" >/dev/null
 
                         # Gunicorn + Django. Not published to the host: Nginx reaches
-                        # it as app:8000 on the internal network.
+                        # it as app:8000 on the internal network. Its access log is off:
+                        # Nginx already logs every request.
                         docker run -d --name "$APP_NAME" \
                             --network "$NETWORK" --network-alias app \
                             --restart unless-stopped \
+                            --log-driver journald --log-opt tag=book-tracker \
                             -e GUNICORN_BIND=0.0.0.0:8000 \
+                            -e GUNICORN_ACCESSLOG= \
                             -e DJANGO_DEBUG=False \
                             -e DJANGO_STATIC_ROOT=/opt/book_tracker/staticfiles \
                             -e DJANGO_SECRET_KEY \
@@ -280,6 +293,7 @@ pipeline {
                         docker create --name "$NGINX_NAME" \
                             --network "$NETWORK" \
                             --restart unless-stopped \
+                            --log-driver journald --log-opt tag=nginx \
                             -p "$APP_PORT":80 \
                             -v "$STATIC_VOL":/opt/book_tracker/staticfiles:ro \
                             nginx:stable >/dev/null

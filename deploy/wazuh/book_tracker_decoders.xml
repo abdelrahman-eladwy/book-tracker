@@ -1,0 +1,34 @@
+<!--
+  Book Tracker decoders for the Wazuh manager.
+
+  The Jenkins deploy runs the containers with the journald log driver and these
+  tags (SYSLOG_IDENTIFIER), which the Wazuh agent on the host reads:
+    bt-nginx  -> "nginx"         decoded by Wazuh's built-in nginx/web decoders
+    bt-mongo  -> "mongod"        JSON lines, decoded by the built-in "json" decoder
+    bt-app    -> "book-tracker"  decoded here (Django logging + Gunicorn)
+-->
+
+<decoder name="book-tracker">
+  <program_name>^book-tracker$</program_name>
+</decoder>
+
+<!--
+  Django logging (book_tracker/settings.py LOGGING):
+  WARNING django.security.csrf: Forbidden (CSRF cookie not set.): /books/add/
+  ERROR django.request: Internal Server Error: /books/
+-->
+<decoder name="book-tracker-django">
+  <parent>book-tracker</parent>
+  <regex type="pcre2">^(DEBUG|INFO|WARNING|ERROR|CRITICAL) (\S+): (.+)$</regex>
+  <order>django.level, django.logger, django.message</order>
+</decoder>
+
+<!--
+  Gunicorn error log:
+  [2026-10-08 13:04:43 +0000] [1] [CRITICAL] WORKER TIMEOUT (pid:9)
+-->
+<decoder name="book-tracker-gunicorn">
+  <parent>book-tracker</parent>
+  <regex type="pcre2">^\[[^\]]+\] \[(\d+)\] \[([A-Z]+)\] (.+)$</regex>
+  <order>gunicorn.pid, gunicorn.level, gunicorn.message</order>
+</decoder>

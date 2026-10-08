@@ -88,3 +88,23 @@ STATIC_ROOT = Path(os.environ.get("DJANGO_STATIC_ROOT", BASE_DIR / "staticfiles"
 # Nginx sets X-Forwarded-Proto, so Django knows when the original request
 # was HTTPS.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# --- Logging ----------------------------------------------------------------
+# With DEBUG off Django prints nothing by default. Send security warnings
+# (CSRF failures, bad Host headers, ...) and server errors to stderr, one line
+# per event, so Docker/journald and Wazuh pick them up
+# (see deploy/wazuh/book_tracker_decoders.xml).
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "plain": {"format": "%(levelname)s %(name)s: %(message)s"},
+    },
+    "handlers": {
+        "stderr": {"class": "logging.StreamHandler", "formatter": "plain"},
+    },
+    "loggers": {
+        "django.security": {"handlers": ["stderr"], "level": "WARNING", "propagate": False},
+        "django.request": {"handlers": ["stderr"], "level": "ERROR", "propagate": False},
+    },
+}

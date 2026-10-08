@@ -1,0 +1,103 @@
+<!--
+  Book Tracker rules for the Wazuh manager (IDs 100200-100299).
+
+  Nginx (bt-nginx) needs no rules here: its access/error log lines go through
+  Wazuh's built-in web rules (SQL injection, XSS, path traversal, scanners,
+  4xx/5xx bursts, ...). These rules cover what the built-in ruleset does not:
+  Django/Gunicorn (bt-app) and MongoDB 7's JSON log (bt-mongo).
+-->
+
+<group name="book_tracker,">
+
+  <!-- Django / Gunicorn (journald tag "book-tracker") -->
+
+  <rule id="100200" level="0">
+    <decoded_as>book-tracker</decoded_as>
+    <description>Book Tracker app messages.</description>
+  </rule>
+
+  <rule id="100201" level="5">
+    <if_sid>100200</if_sid>
+    <field name="django.logger" type="pcre2">^django\.security\.csrf$</field>
+    <description>Book Tracker: request rejected by CSRF protection: $(django.message)</description>
+    <group>web,csrf,</group>
+  </rule>
+
+  <rule id="100202" level="6">
+    <if_sid>100200</if_sid>
+    <field name="django.logger" type="pcre2">^django\.security\.DisallowedHost$</field>
+    <description>Book Tracker: request with a disallowed Host header (scanner or Host header attack): $(django.message)</description>
+    <group>web,attack,</group>
+  </rule>
+
+  <rule id="100203" level="6">
+    <if_sid>100200</if_sid>
+    <field name="django.logger" type="pcre2">^django\.security\.</field>
+    <description>Book Tracker: Django security warning ($(django.logger)): $(django.message)</description>
+    <group>web,attack,</group>
+  </rule>
+
+  <rule id="100204" level="7">
+    <if_sid>100200</if_sid>
+    <field name="django.logger" type="pcre2">^django\.request$</field>
+    <field name="django.level" type="pcre2">^(ERROR|CRITICAL)$</field>
+    <description>Book Tracker: server error: $(django.message)</description>
+    <group>web,error,</group>
+  </rule>
+
+  <rule id="100205" level="7">
+    <if_sid>100200</if_sid>
+    <field name="gunicorn.level" type="pcre2">^(ERROR|CRITICAL)$</field>
+    <description>Book Tracker: Gunicorn $(gunicorn.level): $(gunicorn.message)</description>
+    <group>error,</group>
+  </rule>
+
+  <rule id="100210" level="10" frequency="10" timeframe="120">
+    <if_matched_sid>100201</if_matched_sid>
+    <description>Book Tracker: many requests rejected by CSRF protection (possible CSRF attack or broken client).</description>
+    <group>web,csrf,attack,</group>
+  </rule>
+
+  <rule id="100211" level="10" frequency="5" timeframe="300">
+    <if_matched_sid>100204</if_matched_sid>
+    <description>Book Tracker: repeated server errors.</description>
+    <group>web,error,</group>
+  </rule>
+
+  <!-- MongoDB 7 (journald tag "mongod"; JSON lines decoded by the built-in "json" decoder) -->
+
+  <rule id="100220" level="0">
+    <decoded_as>json</decoded_as>
+    <program_name>^mongod$</program_name>
+    <description>Book Tracker MongoDB messages.</description>
+  </rule>
+
+  <rule id="100221" level="5">
+    <if_sid>100220</if_sid>
+    <field name="msg" type="pcre2">^(Authentication failed|Failed to authenticate)$</field>
+    <description>Book Tracker MongoDB: authentication failed for user $(attr.user) from $(attr.client).</description>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <rule id="100222" level="10" frequency="5" timeframe="120">
+    <if_matched_sid>100221</if_matched_sid>
+    <same_field>attr.user</same_field>
+    <description>Book Tracker MongoDB: repeated authentication failures for user $(attr.user) (possible brute force).</description>
+    <group>authentication_failures,</group>
+  </rule>
+
+  <rule id="100223" level="5">
+    <if_sid>100220</if_sid>
+    <field name="s">^E$</field>
+    <description>Book Tracker MongoDB error ($(c)): $(msg)</description>
+    <group>error,</group>
+  </rule>
+
+  <rule id="100224" level="9">
+    <if_sid>100220</if_sid>
+    <field name="s">^F$</field>
+    <description>Book Tracker MongoDB fatal error ($(c)): $(msg)</description>
+    <group>error,</group>
+  </rule>
+
+</group>

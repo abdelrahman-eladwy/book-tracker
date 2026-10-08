@@ -20,7 +20,9 @@ timeout = 30
 graceful_timeout = 30
 
 # Log to stdout/stderr; under systemd this ends up in `journalctl -u book_tracker`.
-accesslog = "-"
+# GUNICORN_ACCESSLOG="" turns the access log off (the Jenkins deploy does this
+# because Nginx already logs every request).
+accesslog = os.environ.get("GUNICORN_ACCESSLOG", "-") or None
 errorlog = "-"
 loglevel = "info"
 
