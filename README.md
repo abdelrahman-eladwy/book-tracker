@@ -14,7 +14,7 @@ Django           (views, forms, templates)
 MongoDB          (collection: books, accessed with PyMongo)
 ```
 
-> **Quickest way to run the whole stack:** `docker compose up -d --build`, then open <http://localhost:8080>.
+> **Quickest way to run the whole stack:** `docker compose up -d --build`, then open <http://localhost:8082>.
 > See **[DEPLOYMENT.md](DEPLOYMENT.md)** for the step-by-step Docker deployment guide.
 > The sections below describe a manual install on a Linux server.
 

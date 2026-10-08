@@ -3,13 +3,13 @@
 This guide deploys the full stack with Docker Compose on any machine that has Docker (Windows, macOS or Linux):
 
 ```text
-Browser ──► Nginx :8080 ──► Gunicorn app:8000 ──► Django ──► MongoDB mongo:27017
+Browser ──► Nginx :8082 ──► Gunicorn app:8000 ──► Django ──► MongoDB mongo:27017
             (container)       (container)                      (container)
 ```
 
 | Container | Image | Role | Exposed to the host |
 |---|---|---|---|
-| `book-tracker-nginx` | `nginx:stable` | Serves `/static/`, proxies everything else to Gunicorn | `http://localhost:8080` |
+| `book-tracker-nginx` | `nginx:stable` | Serves `/static/`, proxies everything else to Gunicorn | `http://localhost:8082` |
 | `book-tracker-app` | built from `Dockerfile` (Python 3.12) | Runs `collectstatic`, then Gunicorn + Django | no (internal only) |
 | `book-tracker-mongo` | `mongo:7` | Stores the `books` collection | `127.0.0.1:27017` (local machine only) |
 
@@ -45,7 +45,7 @@ book_tracker/
   docker compose version
   ```
 
-- Port **8080** must be free. To use another port (e.g. 9090), change `"0.0.0.0:8080:80"` to `"0.0.0.0:9090:80"` in `docker-compose.yml` and use that port in `DJANGO_CSRF_TRUSTED_ORIGINS`.
+- Port **8082** must be free (8080 is used by Jenkins, 8081 by the Jenkins pipeline deploy). To use another port (e.g. 9090), change `"0.0.0.0:8082:80"` to `"0.0.0.0:9090:80"` in `docker-compose.yml` and use that port in `DJANGO_CSRF_TRUSTED_ORIGINS`.
 - Git, to get the code:
 
   ```bash
@@ -71,7 +71,7 @@ Edit `deploy/docker.env`:
 | `DJANGO_SECRET_KEY` | A long random string: `python -c "import secrets; print(secrets.token_urlsafe(50))"` |
 | `DJANGO_DEBUG` | `False` |
 | `DJANGO_ALLOWED_HOSTS` | Host names used in the browser, e.g. `localhost,127.0.0.1` (add your server IP or domain) |
-| `DJANGO_CSRF_TRUSTED_ORIGINS` | Full origins incl. port, e.g. `http://localhost:8080` (add `http://your-server-ip:8080`) |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | Full origins incl. port, e.g. `http://localhost:8082` (add `http://your-server-ip:8082`) |
 
 Don't put quotes around values. If the password contains `@ : / ? #`, URL-encode it in `MONGODB_URI`.
 
@@ -85,7 +85,7 @@ What happens:
 
 1. `mongo` starts and must pass its health check (`ping`).
 2. `app` image is built, `collectstatic` copies CSS into the shared `book-tracker-static` volume, and Gunicorn starts on `0.0.0.0:8000` inside the Docker network.
-3. `nginx` starts and publishes port 8080.
+3. `nginx` starts and publishes port 8082.
 
 Check the status:
 
@@ -120,11 +120,11 @@ Connected to MongoDB.
 
 **b. Browser → Nginx → Gunicorn → Django**
 
-Open <http://localhost:8080> (or <http://127.0.0.1:8080>; always use `http://`, not `https://`). The dashboard shows the totals. Or with curl:
+Open <http://localhost:8082> (or <http://127.0.0.1:8082>; always use `http://`, not `https://`). The dashboard shows the totals. Or with curl:
 
 ```bash
-curl -I http://localhost:8080/                          # 200 OK
-curl -I http://localhost:8080/static/books/style.css    # 200 OK, "Server: nginx" (served by Nginx directly)
+curl -I http://localhost:8082/                          # 200 OK
+curl -I http://localhost:8082/static/books/style.css    # 200 OK, "Server: nginx" (served by Nginx directly)
 ```
 
 **c. Production settings check** (HTTPS-related warnings are expected while serving plain HTTP)
@@ -214,8 +214,8 @@ To keep MongoDB completely internal (recommended on a public server), delete the
 | `Authentication failed` from MongoDB | The `MONGO_INITDB_*` values only apply to a **new** volume. Use the original password, or reset with `docker compose down -v` (deletes data). |
 | `502 Bad Gateway` | Gunicorn isn't running: `docker compose logs app`. |
 | Page has no styling | `docker compose logs app` should show `static files copied`; rebuild with `docker compose up -d --build`. |
-| `http://localhost:8080` hangs but `http://127.0.0.1:8080` works (Windows) | Docker Desktop's WSL2 relay can hang on IPv6 (`::1`), which browsers try first for `localhost`. Keep the port published as `"0.0.0.0:8080:80"` (IPv4 only), as in `docker-compose.yml`, or use `127.0.0.1`. |
-| `port is already allocated` | Port 8080 or 27017 is in use. Change the host port in `docker-compose.yml`. |
+| `http://localhost:8082` hangs but `http://127.0.0.1:8082` works (Windows) | Docker Desktop's WSL2 relay can hang on IPv6 (`::1`), which browsers try first for `localhost`. Keep the port published as `"0.0.0.0:8082:80"` (IPv4 only), as in `docker-compose.yml`, or use `127.0.0.1`. |
+| `port is already allocated` | Port 8082 or 27017 is in use. Change the host port in `docker-compose.yml`. |
 
 ## Going to production on a public server
 
