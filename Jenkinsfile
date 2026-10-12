@@ -211,9 +211,16 @@ pipeline {
                     sh '''
                         rm -f grype-report.json
                         # Run as the Jenkins user (plus the socket's group) so the JSON
-                        # report written to the workspace is not owned by root.
+                        # report written to the workspace is not owned by root. The
+                        # image's /tmp is root-only, so Grype gets a directory in the
+                        # Jenkins home for its temp files and its vulnerability DB
+                        # (kept between builds, so the DB is only re-downloaded when
+                        # there is an update).
+                        GRYPE_HOME="$HOME/.cache/grype"
+                        mkdir -p "$GRYPE_HOME/tmp" "$GRYPE_HOME/db"
                         docker run --rm -u "$(id -u):$(id -g)" --group-add "$(stat -c %g /var/run/docker.sock)" \
-                            -e HOME=/tmp \
+                            -v "$GRYPE_HOME":/grype -e HOME=/grype -e TMPDIR=/grype/tmp \
+                            -e GRYPE_DB_CACHE_DIR=/grype/db \
                             -v /var/run/docker.sock:/var/run/docker.sock \
                             -v "$WORKSPACE":/src -w /src \
                             anchore/grype:latest "docker:$IMAGE_NAME:$IMAGE_TAG" \
