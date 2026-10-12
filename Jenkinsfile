@@ -76,6 +76,11 @@ pipeline {
         MONGO_VOL  = 'bt-mongo-data'
         STATIC_VOL = 'bt-static'
         MONGODB_DATABASE = 'book_tracker'
+
+        DEFECTDOJO_URL  = 'http://192.168.100.179:8080'
+        DD_PRODUCT_TYPE = 'Web Applications'
+        DD_PRODUCT      = 'Book Tracker'
+        DD_ENGAGEMENT   = 'Jenkins CI'
     }
 
     stages {
@@ -113,12 +118,16 @@ pipeline {
                             sh '''
                                 docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
                                     -v "$WORKSPACE":/src -w /src "$PY_IMAGE" sh -c '
+                                        rm -f pip-audit-report.json
                                         python -m venv /tmp/venv &&
                                         /tmp/venv/bin/pip install --no-cache-dir -q pip-audit &&
                                         /tmp/venv/bin/pip-audit -r requirements.txt --progress-spinner off \
                                             > pip-audit-report.txt 2>&1
                                         rc=$?
                                         cat pip-audit-report.txt
+                                        # JSON copy for DefectDojo (pip-audit writes one format per run).
+                                        /tmp/venv/bin/pip-audit -r requirements.txt --progress-spinner off \
+                                            -f json -o pip-audit-report.json >/dev/null 2>&1
                                         exit $rc
                                     '
                             '''
@@ -140,7 +149,7 @@ pipeline {
                                         python -m venv /tmp/venv &&
                                         /tmp/venv/bin/pip install --no-cache-dir -q detect-secrets &&
                                         /tmp/venv/bin/detect-secrets scan --all-files \
-                                            --exclude-files "(^|/)\\.git/|^\\.secrets\\.baseline$|^detect-secrets-scan\\.json$|-report\\.txt$" \
+                                            --exclude-files "(^|/)\\.git/|^\\.secrets\\.baseline$|^detect-secrets-scan\\.json$|-report\\.(txt|json)$" \
                                             > detect-secrets-scan.json &&
                                         /tmp/venv/bin/python ci/check_secrets.py \
                                             detect-secrets-scan.json .secrets.baseline \
@@ -161,12 +170,16 @@ pipeline {
                             sh '''
                                 docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
                                     -v "$WORKSPACE":/src -w /src "$PY_IMAGE" sh -c '
+                                        rm -f bandit-report.json
                                         python -m venv /tmp/venv &&
                                         /tmp/venv/bin/pip install --no-cache-dir -q bandit &&
                                         /tmp/venv/bin/bandit -r books book_tracker manage.py -ll \
                                             > bandit-report.txt 2>&1
                                         rc=$?
                                         cat bandit-report.txt
+                                        # JSON copy for DefectDojo.
+                                        /tmp/venv/bin/bandit -r books book_tracker manage.py -ll -q \
+                                            -f json -o bandit-report.json >/dev/null 2>&1
                                         exit $rc
                                     '
                             '''
@@ -176,7 +189,7 @@ pipeline {
             }
             post {
                 always {
-                    archiveArtifacts artifacts: '*-report.txt', allowEmptyArchive: true
+                    archiveArtifacts artifacts: '*-report.txt, *-report.json, detect-secrets-scan.json', allowEmptyArchive: true
                 }
             }
         }
@@ -196,10 +209,74 @@ pipeline {
             steps {
                 catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
                     sh '''
-                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                        rm -f grype-report.json
+                        # Run as the Jenkins user (plus the socket's group) so the JSON
+                        # report written to the workspace is not owned by root.
+                        docker run --rm -u "$(id -u):$(id -g)" --group-add "$(stat -c %g /var/run/docker.sock)" \
+                            -e HOME=/tmp \
+                            -v /var/run/docker.sock:/var/run/docker.sock \
+                            -v "$WORKSPACE":/src -w /src \
                             anchore/grype:latest "docker:$IMAGE_NAME:$IMAGE_TAG" \
+                            -o table -o json=grype-report.json \
                             --only-fixed --fail-on high
                     '''
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'grype-report.json', allowEmptyArchive: true
+                }
+            }
+        }
+
+        // Send every scan report to DefectDojo, which tracks the findings across
+        // builds (new / still open / fixed) in product "$DD_PRODUCT", engagement
+        // "$DD_ENGAGEMENT", one test per scanner. reimport-scan creates them on
+        // the first upload. Needs the Jenkins credential "defectdojo-api-key"
+        // (Secret text: a DefectDojo API v2 key). A failed upload marks the build
+        // UNSTABLE but does not block the deploy.
+        stage('Upload to DefectDojo') {
+            when { expression { isMain() } }
+            steps {
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                    withCredentials([string(credentialsId: 'defectdojo-api-key', variable: 'DD_API_KEY')]) {
+                        sh '''
+                            failed=0
+                            resp=$(mktemp)
+                            trap 'rm -f "$resp"' EXIT
+
+                            upload() {  # upload <scan type> <test title> <report file>
+                                if [ ! -s "$3" ]; then
+                                    echo "DefectDojo: no $3, skipping $2"
+                                    return
+                                fi
+                                code=$(curl -sS -o "$resp" -w '%{http_code}' --max-time 300 \
+                                    -X POST "$DEFECTDOJO_URL/api/v2/reimport-scan/" \
+                                    -H "Authorization: Token $DD_API_KEY" \
+                                    -F "scan_type=$1" -F "test_title=$2" -F "file=@$3" \
+                                    -F "product_type_name=$DD_PRODUCT_TYPE" \
+                                    -F "product_name=$DD_PRODUCT" \
+                                    -F "engagement_name=$DD_ENGAGEMENT" \
+                                    -F auto_create_context=true \
+                                    -F close_old_findings=true \
+                                    -F "version=$IMAGE_TAG" -F "build_id=$BUILD_NUMBER" \
+                                    -F "commit_hash=$GIT_COMMIT" -F "branch_tag=main" || true)
+                                if [ "$code" = 201 ]; then
+                                    echo "DefectDojo: uploaded $2"
+                                else
+                                    echo "DefectDojo: $2 upload failed (HTTP $code):"
+                                    head -c 1000 "$resp"; echo
+                                    failed=1
+                                fi
+                            }
+
+                            upload "pip-audit Scan"      "pip-audit"      pip-audit-report.json
+                            upload "Bandit Scan"         "Bandit"         bandit-report.json
+                            upload "Detect-secrets Scan" "detect-secrets" detect-secrets-scan.json
+                            upload "Anchore Grype"       "Grype"          grype-report.json
+                            exit $failed
+                        '''
+                    }
                 }
             }
         }

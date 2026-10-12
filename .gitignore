@@ -9,3 +9,4 @@ deploy/docker.env
 # CI scan outputs
 detect-secrets-scan.json
 *-report.txt
+*-report.json
