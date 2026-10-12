@@ -219,8 +219,8 @@ pipeline {
                         GRYPE_HOME="$HOME/.cache/grype"
                         mkdir -p "$GRYPE_HOME/tmp" "$GRYPE_HOME/db"
                         docker run --rm -u "$(id -u):$(id -g)" --group-add "$(stat -c %g /var/run/docker.sock)" \
-                            -v "$GRYPE_HOME":/grype -e HOME=/grype -e TMPDIR=/grype/tmp \
-                            -e GRYPE_DB_CACHE_DIR=/grype/db \
+                            -v "$GRYPE_HOME":/grype-home -e HOME=/grype-home -e TMPDIR=/grype-home/tmp \
+                            -e GRYPE_DB_CACHE_DIR=/grype-home/db \
                             -v /var/run/docker.sock:/var/run/docker.sock \
                             -v "$WORKSPACE":/src -w /src \
                             anchore/grype:latest "docker:$IMAGE_NAME:$IMAGE_TAG" \
